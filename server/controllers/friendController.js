@@ -22,25 +22,52 @@ const sendFriendRequest = async (req, res) => {
             return res.status(400).json({ message: 'Already friends' });
         }
 
-        // Check if request already exists
-        const existingRequest = await FriendRequest.findOne({
-            $or: [
-                { sender: req.user._id, receiver: receiverId },
-                { sender: receiverId, receiver: req.user._id },
-            ],
-            status: 'pending',
+        // 1. Check if THEY sent ME a request particularly (Pending)
+        const incomingRequest = await FriendRequest.findOne({
+            sender: receiverId,
+            receiver: req.user._id,
+            status: 'pending'
         });
 
-        if (existingRequest) {
-            return res.status(400).json({ message: 'Friend request already pending' });
+        if (incomingRequest) {
+            return res.status(400).json({ message: 'They already sent you a request. Check your alerts!' });
         }
 
+        // 2. Check if I sent THEM a request
+        let outgoingRequest = await FriendRequest.findOne({
+            sender: req.user._id,
+            receiver: receiverId
+        });
+
+        if (outgoingRequest) {
+            if (outgoingRequest.status === 'pending') {
+                return res.status(400).json({ message: 'Friend request already pending' });
+            }
+            if (outgoingRequest.status === 'accepted') {
+                return res.status(400).json({ message: 'Already friends' });
+            }
+            if (outgoingRequest.status === 'rejected') {
+                // Reactivate request
+                outgoingRequest.status = 'pending';
+                await outgoingRequest.save();
+
+                const fullRequest = await FriendRequest.findById(outgoingRequest._id)
+                    .populate('sender', 'name avatar userTag')
+                    .populate('receiver', 'name avatar userTag');
+
+                return res.status(201).json(fullRequest);
+            }
+        }
+
+        // Create new request
         const request = await FriendRequest.create({
             sender: req.user._id,
             receiver: receiverId,
         });
 
-        const fullRequest = await FriendRequest.findById(request._id).populate('sender', 'name avatar userTag').populate('receiver', 'name avatar userTag');
+        const fullRequest = await FriendRequest.findById(request._id)
+            .populate('sender', 'name avatar userTag')
+            .populate('receiver', 'name avatar userTag');
 
         res.status(201).json(fullRequest);
     } catch (error) {

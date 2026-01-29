@@ -298,13 +298,19 @@ const Sidebar = ({ onSelectChat, activeChat }) => {
                                 <p className="text-xs text-[var(--text-secondary)] font-mono mb-4">{searchResult.userTag}</p>
                                 <button
                                     onClick={() => handleSendRequest(searchResult._id)}
-                                    disabled={searchResult.requestSent}
-                                    className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all ${searchResult.requestSent
-                                        ? 'bg-green-500/20 text-green-400 cursor-default'
-                                        : 'bg-[var(--accent-primary)] text-white shadow-lg shadow-[var(--accent-glow)] hover:bg-[var(--accent-hover)]'
+                                    disabled={searchResult.requestSent || searchResult.isFriend || searchResult.hasPendingRequest}
+                                    className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all ${searchResult.isFriend
+                                            ? 'bg-white/10 text-white cursor-default'
+                                            : searchResult.hasPendingRequest
+                                                ? 'bg-indigo-500/20 text-indigo-300 cursor-default'
+                                                : searchResult.requestSent
+                                                    ? 'bg-green-500/20 text-green-400 cursor-default'
+                                                    : 'bg-[var(--accent-primary)] text-white shadow-lg shadow-[var(--accent-glow)] hover:bg-[var(--accent-hover)]'
                                         }`}
                                 >
-                                    {searchResult.requestSent ? 'Sent' : 'Send Request'}
+                                    {searchResult.isFriend ? 'Already Friends' :
+                                        searchResult.hasPendingRequest ? 'Check Alerts' :
+                                            searchResult.requestSent ? 'Sent' : 'Send Request'}
                                 </button>
                             </div>
                         )}
