@@ -1,5 +1,7 @@
 const Message = require('../models/Message');
 
+const onlineUsers = new Set();
+
 const socketHandler = (io) => {
     io.on('connection', (socket) => {
         console.log(`User Connected: ${socket.id}`);
@@ -7,7 +9,18 @@ const socketHandler = (io) => {
         // Join a room based on user ID
         socket.on('join_room', (userId) => {
             socket.join(userId);
-            console.log(`User ${userId} joined room ${userId}`);
+            socket.userId = userId; // Store userId on socket for disconnect handling
+
+            // Add to online users
+            onlineUsers.add(userId);
+
+            // Broadcast to all users that this user is online
+            io.emit('user_status_change', { userId, status: 'online' });
+
+            // Send current online users to this user
+            socket.emit('online_users_list', Array.from(onlineUsers));
+
+            console.log(`User ${userId} joined room ${userId} and is online`);
         });
 
         // Send Message
@@ -50,6 +63,11 @@ const socketHandler = (io) => {
         });
 
         socket.on('disconnect', () => {
+            if (socket.userId) {
+                onlineUsers.delete(socket.userId);
+                io.emit('user_status_change', { userId: socket.userId, status: 'offline' });
+                console.log(`User ${socket.userId} disconnected`);
+            }
             console.log('User Disconnected', socket.id);
         });
     });

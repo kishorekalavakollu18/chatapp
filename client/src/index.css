@@ -1,34 +1,81 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;700&family=Noto+Serif+JP:wght@400;700&family=JetBrains+Mono:wght@400;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
+  :root {
+    /* DEFAULT THEME: HANASU (Japanese Minimal) */
+    --bg-primary: #0f172a;
+    /* Slate 900 */
+    --bg-secondary: #020617;
+    /* Slate 950 */
+    --bg-panel: rgba(30, 41, 59, 0.5);
+    /* Slate 800 / 0.5 */
+
+    --text-primary: #f8fafc;
+    /* Slate 50 */
+    --text-secondary: #94a3b8;
+    /* Slate 400 */
+    --text-accent: #f472b6;
+    /* Sakura Pink */
+
+    --accent-primary: #f472b6;
+    /* Sakura */
+    --accent-hover: #db2777;
+    /* darker pink */
+    --accent-glow: rgba(244, 114, 182, 0.3);
+  }
+
+  /* DAWN THEME (High Contrast: Pure White & Black) */
+  [data-theme='dawn'] {
+    --bg-primary: #ffffff;
+    /* Pure White */
+    --bg-secondary: #f4f4f5;
+    /* Zinc 100 */
+    --bg-panel: #ffffff;
+
+    --text-primary: #000000;
+    /* Pure Black */
+    --text-secondary: #52525b;
+    /* Zinc 600 */
+    --text-accent: #000000;
+
+    --accent-primary: #000000;
+    /* Black Accents */
+    --accent-hover: #27272a;
+    /* Dark Grey */
+    --accent-glow: rgba(0, 0, 0, 0.1);
+  }
+
   body {
-    @apply bg-dark-900 text-white font-sans antialiased;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: 'Inter', sans-serif;
+    transition: background-color 0.5s ease, color 0.5s ease;
   }
 }
 
-/* Custom Scrollbar */
+/* Custom Scrollbar - Themed */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-dark-900;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-dark-700 rounded-full;
+  background: var(--bg-panel);
+  border-radius: 999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-gray-600;
+  background: var(--text-secondary);
 }
 
-.bg-dots-pattern {
-  background-image: radial-gradient(#2C2C2C 1px, transparent 1px);
-  background-size: 20px 20px;
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--text-secondary) transparent;
 }
-

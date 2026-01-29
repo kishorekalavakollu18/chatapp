@@ -1,39 +1,130 @@
 import React, { useState, useEffect } from 'react';
-import { FiSearch, FiUserPlus, FiMessageSquare, FiCpu, FiLogOut, FiBell } from 'react-icons/fi';
+import { useTheme } from '../../context/ThemeContext';
+import { FiSearch, FiUserPlus, FiMessageSquare, FiCpu, FiLogOut, FiBell, FiZap } from 'react-icons/fi';
 import { useAuth } from '../../context/AuthContext';
+import { useSocket } from '../../context/SocketContext';
 import { searchUser, getFriends, getFriendRequests, sendFriendRequest, acceptFriendRequest, rejectFriendRequest } from '../../services/userApi';
-import { motion } from 'framer-motion';
 
 const Sidebar = ({ onSelectChat, activeChat }) => {
     const { user, logout } = useAuth();
-    const [tab, setTab] = useState('friends'); // friends, requests, search
+    const { theme, toggleTheme } = useTheme();
+    const { socket, onlineUsers } = useSocket();
+    const [tab, setTab] = useState('friends');
     const [friends, setFriends] = useState([]);
     const [requests, setRequests] = useState([]);
     const [query, setQuery] = useState('');
     const [searchResult, setSearchResult] = useState(null);
-    const [loading, setLoading] = useState(false);
+    const [unread, setUnread] = useState({});
 
     useEffect(() => {
         fetchFriends();
         fetchRequests();
+        if (Notification.permission !== "granted") {
+            Notification.requestPermission();
+        }
     }, [tab]);
+
+    // Listen for incoming messages
+    // Listen for incoming messages
+    useEffect(() => {
+        if (!socket) return;
+
+        let userInteracted = false;
+        const enableAudio = () => { userInteracted = true; };
+        window.addEventListener('click', enableAudio);
+        window.addEventListener('keydown', enableAudio);
+
+        const handleMessage = (msg) => {
+            // 1. Reorder Logic: Move conversation to top
+            const partnerId = msg.sender === user._id ? msg.receiver : msg.sender;
+
+            setFriends(prev => {
+                const index = prev.findIndex(f => f._id === partnerId);
+                if (index > -1) {
+                    const newFriends = [...prev];
+                    const [friend] = newFriends.splice(index, 1);
+                    newFriends.unshift(friend);
+                    return newFriends;
+                }
+                return prev;
+            });
+
+            // 2. Notification Logic (Only if I am receiver and chat is not open)
+            if (msg.sender !== user._id && activeChat?._id !== msg.sender) { // If I sent it, don't notify myself
+
+                // Update unread count
+                setUnread(prev => ({
+                    ...prev,
+                    [msg.sender]: (prev[msg.sender] || 0) + 1
+                }));
+
+                // Play sound
+                if (userInteracted) {
+                    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+                    audio.volume = 0.5;
+                    audio.play().catch(e => console.log("Audio play prevented by browser policy", e));
+                }
+
+                // Browser Notification
+                if (Notification.permission === "granted" && document.hidden) {
+                    // Start: Look up existing friend data to get name
+                    // Warning: 'friends' in this closure might be stale if not in dependency array.
+                    // But we used Functional Update for setFriends so 'friends' dependency isn't strictly needed for Reorder logic.
+                    // However, we need 'friends' list here to get the name.
+                    // To be safe, we can just use "New Message" or fetch fresh 'friends' via a ref if simple closure capture fails. 
+                    // Since 'friends' is in dependency array [socket, activeChat, friends], this closure IS fresh.
+                    const friend = friends.find(f => f._id === msg.sender);
+                    const name = friend ? friend.name : "New Message";
+
+                    const notification = new Notification(name, {
+                        body: msg.content,
+                        icon: '/vite.svg',
+                        tag: msg.sender
+                    });
+
+                    setTimeout(() => notification.close(), 4000);
+
+                    notification.onclick = function () {
+                        window.focus();
+                        if (friend) onSelectChat({ type: 'friend', ...friend });
+                        this.close();
+                    };
+                }
+            }
+        };
+
+        socket.on('receive_message', handleMessage);
+
+        return () => {
+            socket.off('receive_message', handleMessage);
+            window.removeEventListener('click', enableAudio);
+            window.removeEventListener('keydown', enableAudio);
+        };
+    }, [socket, activeChat, friends, user._id]); // Add user._id just in case
+
+    // Clear unread when chat opens
+    useEffect(() => {
+        if (activeChat && activeChat.type === 'friend') {
+            setUnread(prev => {
+                const newUnread = { ...prev };
+                delete newUnread[activeChat._id];
+                return newUnread;
+            });
+        }
+    }, [activeChat]);
 
     const fetchFriends = async () => {
         try {
             const data = await getFriends();
             setFriends(data);
-        } catch (error) {
-            console.error(error);
-        }
+        } catch (error) { console.error(error); }
     };
 
     const fetchRequests = async () => {
         try {
             const data = await getFriendRequests();
             setRequests(data);
-        } catch (error) {
-            console.error(error);
-        }
+        } catch (error) { console.error(error); }
     };
 
     const handleSearch = async (e) => {
@@ -42,13 +133,10 @@ const Sidebar = ({ onSelectChat, activeChat }) => {
         setLoading(true);
         setSearchResult(null);
         try {
-            // Assume user enters tag like #A1B2 or Just A1B2
-            // If they enter name, API search by tag only currently.
-            // I might need to clarify instructions: "Users can search other users using this ID".
             const res = await searchUser(query);
             setSearchResult(res);
         } catch (error) {
-            setSearchResult(null); // Not found
+            setSearchResult(null);
         }
         setLoading(false);
     };
@@ -56,157 +144,172 @@ const Sidebar = ({ onSelectChat, activeChat }) => {
     const handleSendRequest = async (id) => {
         try {
             await sendFriendRequest(id);
-            setSearchResult(prev => ({ ...prev, requestSent: true })); // Optimistic UI
-            alert("Request Sent!");
+            setSearchResult(prev => ({ ...prev, requestSent: true }));
         } catch (error) {
-            alert(error.response?.data?.message || "Error sending request");
+            alert("Error sending request");
         }
     };
 
-    const handleAccept = async (id) => {
-        await acceptFriendRequest(id);
-        fetchRequests();
-        fetchFriends();
-    };
-
-    const handleReject = async (id) => {
-        await rejectFriendRequest(id);
-        fetchRequests();
-    };
-
     return (
-        <div className="w-full h-full flex flex-col bg-dark-800 border-r border-dark-700">
-            {/* Header */}
-            <div className="p-4 border-b border-dark-700 flex justify-between items-center">
-                <div className="flex items-center gap-3">
-                    <img src={user.avatar} alt="Avatar" className="w-10 h-10 rounded-full border border-dark-600" />
+        <div className="flex flex-col h-full bg-[var(--bg-primary)] backdrop-blur-md transition-colors duration-500">
+            {/* Profile Header */}
+            <div className="p-6 pb-4 border-b border-white/5 flex justify-between items-center bg-[var(--bg-panel)]">
+                <div className="flex items-center gap-4">
+                    <div className="relative">
+                        <img src={user.avatar} alt="Avatar" className="w-12 h-12 rounded-full border border-white/10 p-0.5 object-cover" />
+                        <div className="absolute bottom-0 right-0 w-3 h-3 bg-bamboo rounded-full border border-[var(--bg-primary)]"></div>
+                    </div>
                     <div>
-                        <h3 className="font-semibold text-white truncate max-w-[120px]">{user.name}</h3>
-                        <p className="text-xs text-gray-400">{user.userTag}</p>
+                        <h3 className="font-medium text-[var(--text-primary)] tracking-wide">{user.name}</h3>
+                        <p className="text-xs text-[var(--text-accent)] font-mono">{user.userTag}</p>
                     </div>
                 </div>
-                <button onClick={logout} className="text-gray-400 hover:text-red-500 transition">
-                    <FiLogOut size={20} />
-                </button>
+                <div className="flex gap-2">
+                    <button
+                        onClick={toggleTheme}
+                        className={`p-2 rounded-full transition-all text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5`}
+                        title="Toggle Theme"
+                    >
+                        <FiZap size={18} />
+                    </button>
+                    <button onClick={logout} className="text-[var(--text-secondary)] hover:text-red-400 transition-colors p-2">
+                        <FiLogOut size={18} />
+                    </button>
+                </div>
             </div>
 
-            {/* Tabs / Nav */}
-            <div className="flex p-2 gap-1 bg-dark-800">
-                <button
-                    onClick={() => setTab('friends')}
-                    className={`flex-1 p-2 rounded-lg flex justify-center items-center gap-2 transition ${tab === 'friends' ? 'bg-dark-700 text-white' : 'text-gray-400 hover:bg-dark-700/50'}`}
-                >
-                    <FiMessageSquare />
-                </button>
-                <button
-                    onClick={() => setTab('requests')}
-                    className={`flex-1 p-2 rounded-lg flex justify-center items-center gap-2 transition relative ${tab === 'requests' ? 'bg-dark-700 text-white' : 'text-gray-400 hover:bg-dark-700/50'}`}
-                >
-                    <FiBell />
-                    {requests.length > 0 && <span className="absolute top-2 right-2 w-2 h-2 bg-red-500 rounded-full"></span>}
-                </button>
-                <button
-                    onClick={() => setTab('search')}
-                    className={`flex-1 p-2 rounded-lg flex justify-center items-center gap-2 transition ${tab === 'search' ? 'bg-dark-700 text-white' : 'text-gray-400 hover:bg-dark-700/50'}`}
-                >
-                    <FiUserPlus />
-                </button>
+            {/* Modern Tabs */}
+            <div className="flex p-4 pb-2 gap-4">
+                {['friends', 'requests', 'search'].map((t) => (
+                    <button
+                        key={t}
+                        onClick={() => setTab(t)}
+                        className={`relative pb-2 text-sm font-medium tracking-wide transition-colors ${tab === t ? 'text-white' : 'text-gray-500 hover:text-gray-300'
+                            }`}
+                    >
+                        {t === 'friends' && 'Chats'}
+                        {t === 'requests' && 'Alerts'}
+                        {t === 'search' && 'Add'}
+                        {t === 'requests' && requests.length > 0 && (
+                            <span className="absolute -top-1 -right-2 w-2 h-2 bg-sakura rounded-full animate-pulse"></span>
+                        )}
+                        {t === 'friends' && Object.values(unread).reduce((a, b) => a + b, 0) > 0 && (
+                            <span className="absolute -top-1 -right-2 w-2 h-2 bg-sakura rounded-full animate-pulse"></span>
+                        )}
+                        {tab === t && (
+                            <span className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-sakura to-transparent"></span>
+                        )}
+                    </button>
+                ))}
             </div>
 
-            {/* Content */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+            {/* Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
 
-                {/* AI Chat Option */}
+                {/* AI Chat Card */}
                 <div
-                    onClick={() => onSelectChat({ type: 'ai', id: 'ai', name: 'AI Assistant' })}
-                    className={`p-3 rounded-xl flex items-center gap-3 cursor-pointer transition border border-transparent ${activeChat?.type === 'ai' ? 'bg-primary/10 border-primary/50' : 'hover:bg-dark-700'}`}
+                    onClick={() => onSelectChat({ type: 'ai', id: 'ai', name: 'AI Helper' })}
+                    className={`p-4 rounded-xl flex items-center gap-4 cursor-pointer transition-all duration-300 border ${activeChat?.type === 'ai'
+                        ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/30 shadow-[0_0_15px_var(--accent-glow)]'
+                        : 'bg-white/5 border-transparent hover:bg-white/10 hover:border-white/10'
+                        }`}
                 >
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-primary flex items-center justify-center text-white">
-                        <FiCpu size={20} />
+                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-purple-500 flex items-center justify-center text-white shadow-lg">
+                        <FiCpu size={18} />
                     </div>
                     <div>
-                        <h4 className="font-medium text-white">AI Assistant</h4>
-                        <p className="text-xs text-gray-400">Always here to help</p>
+                        <h4 className="font-medium text-[var(--text-primary)] text-sm">AI Assistant</h4>
+                        <p className="text-[10px] text-[var(--text-secondary)] font-light">Always available</p>
                     </div>
                 </div>
 
-                <div className="h-px bg-dark-700 my-2" />
+                <div className="h-[1px] bg-white/5 w-full my-2"></div>
 
                 {tab === 'friends' && (
-                    <>
-                        {friends.length === 0 && <p className="text-center text-gray-500 text-sm mt-4">No friends yet. Add some!</p>}
+                    <div className="space-y-2">
+                        {friends.length === 0 && <p className="text-center text-[var(--text-secondary)] text-xs italic mt-8">Silence is golden,<br />but friends are better.</p>}
                         {friends.map(friend => (
                             <div
                                 key={friend._id}
                                 onClick={() => onSelectChat({ type: 'friend', ...friend })}
-                                className={`p-3 rounded-xl flex items-center gap-3 cursor-pointer transition border border-transparent ${activeChat?.id === friend._id ? 'bg-dark-700 border-dark-600' : 'hover:bg-dark-700/50'}`}
+                                className={`p-3 rounded-lg flex items-center gap-3 cursor-pointer transition-all border relative ${activeChat?.id === friend._id
+                                    ? 'bg-white/10 border-white/10'
+                                    : 'hover:bg-white/5 border-transparent'
+                                    }`}
                             >
-                                <img src={friend.avatar} alt="Avatar" className="w-10 h-10 rounded-full" />
-                                <div>
-                                    <h4 className="text-sm font-medium text-white">{friend.name}</h4>
-                                    <p className="text-xs text-gray-400">{friend.userTag}</p>
+                                <img src={friend.avatar} alt="Avatar" className="w-10 h-10 rounded-full border-2 border-transparent group-hover:border-[var(--accent-primary)]/50" />
+                                <div className="flex-1 min-w-0">
+                                    <h4 className="text-sm text-[var(--text-primary)] font-medium truncate">{friend.name}</h4>
+                                    <div className="flex items-center gap-2">
+                                        <p className="text-[10px] text-[var(--text-secondary)] truncate">{friend.userTag}</p>
+                                        <span className={`text-[10px] font-medium ${onlineUsers.has(friend._id) ? 'text-green-400' : 'text-gray-500'}`}>
+                                            {onlineUsers.has(friend._id) ? 'Online' : 'Offline'}
+                                        </span>
+                                    </div>
                                 </div>
+                                {unread[friend._id] > 0 && (
+                                    <div className="w-5 h-5 bg-[var(--accent-primary)] rounded-full flex items-center justify-center text-[10px] text-white font-bold shadow-lg shadow-[var(--accent-glow)] animate-bounce cursor-default">
+                                        {unread[friend._id]}
+                                    </div>
+                                )}
                             </div>
                         ))}
-                    </>
+                    </div>
                 )}
 
                 {tab === 'requests' && (
-                    <>
-                        {requests.length === 0 && <p className="text-center text-gray-500 text-sm mt-4">No pending requests.</p>}
+                    <div className="space-y-3">
                         {requests.map(req => (
-                            <div key={req._id} className="p-3 bg-dark-700/30 rounded-xl border border-dark-700">
+                            <div key={req._id} className="p-4 bg-[var(--bg-panel)] rounded-xl border border-white/5 backdrop-blur-sm">
                                 <div className="flex items-center gap-3 mb-3">
-                                    <img src={req.sender.avatar} alt="Avatar" className="w-10 h-10 rounded-full" />
+                                    <img src={req.sender.avatar} alt="Avatar" className="w-8 h-8 rounded-full" />
                                     <div>
-                                        <h4 className="text-sm font-medium text-white">{req.sender.name}</h4>
-                                        <p className="text-xs text-gray-400">{req.sender.userTag}</p>
+                                        <h4 className="text-sm font-medium text-[var(--text-primary)]">{req.sender.name}</h4>
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <button onClick={() => handleAccept(req._id)} className="flex-1 bg-secondary/20 text-secondary hover:bg-secondary/30 py-1.5 rounded-lg text-xs font-medium transition">Accept</button>
-                                    <button onClick={() => handleReject(req._id)} className="flex-1 bg-red-500/20 text-red-500 hover:bg-red-500/30 py-1.5 rounded-lg text-xs font-medium transition">Reject</button>
+                                    <button onClick={() => acceptFriendRequest(req._id).then(() => { fetchRequests(); fetchFriends(); })} className="flex-1 bg-bamboo/20 text-bamboo hover:bg-bamboo/30 py-1.5 rounded text-xs transition">Accept</button>
+                                    <button onClick={() => rejectFriendRequest(req._id).then(fetchRequests)} className="flex-1 bg-red-500/10 text-red-400 hover:bg-red-500/20 py-1.5 rounded text-xs transition">Dismiss</button>
                                 </div>
                             </div>
                         ))}
-                    </>
+                    </div>
                 )}
 
                 {tab === 'search' && (
-                    <div>
-                        <form onSubmit={handleSearch} className="flex gap-2 mb-4">
+                    <div className="animate-fade-in">
+                        <form onSubmit={handleSearch} className="flex gap-2 mb-6">
                             <input
                                 type="text"
-                                placeholder="Search ID (e.g. #A1B2)"
-                                className="flex-1 bg-dark-900 border border-dark-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary text-white placeholder-gray-600"
+                                placeholder="Search ID (#XXXX)"
+                                className="flex-1 bg-[var(--bg-panel)] border-b border-white/10 text-[var(--text-primary)] px-2 py-2 text-sm focus:outline-none focus:border-[var(--accent-primary)] placeholder-[var(--text-secondary)] transition-all font-mono"
                                 value={query}
                                 onChange={(e) => setQuery(e.target.value)}
                             />
-                            <button type="submit" className="bg-primary p-2 rounded-lg text-white hover:bg-primary/90 transition">
+                            <button type="submit" className="text-[var(--accent-primary)] hover:text-[var(--text-primary)] transition">
                                 <FiSearch />
                             </button>
                         </form>
 
-                        {loading && <p className="text-center text-gray-500 text-xs">Searching...</p>}
-
                         {searchResult && (
-                            <div className="p-3 bg-dark-700/30 rounded-xl border border-dark-700 flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <img src={searchResult.avatar} alt="Avatar" className="w-10 h-10 rounded-full" />
-                                    <div>
-                                        <h4 className="text-sm font-medium text-white">{searchResult.name}</h4>
-                                        <p className="text-xs text-gray-400">{searchResult.userTag}</p>
-                                    </div>
-                                </div>
-                                <button onClick={() => handleSendRequest(searchResult._id)} className="p-2 bg-primary/20 text-primary rounded-lg hover:bg-primary/30 transition">
-                                    <FiUserPlus />
+                            <div className="flex flex-col items-center p-6 bg-white/5 rounded-xl border border-white/5">
+                                <img src={searchResult.avatar} alt="Avatar" className="w-16 h-16 rounded-full mb-3 ring-2 ring-[var(--accent-primary)]/30" />
+                                <h4 className="text-[var(--text-primary)] font-medium">{searchResult.name}</h4>
+                                <p className="text-xs text-[var(--text-secondary)] font-mono mb-4">{searchResult.userTag}</p>
+                                <button
+                                    onClick={() => handleSendRequest(searchResult._id)}
+                                    disabled={searchResult.requestSent}
+                                    className={`px-4 py-2 rounded-full text-xs font-medium tracking-wide transition-all ${searchResult.requestSent
+                                        ? 'bg-green-500/20 text-green-400 cursor-default'
+                                        : 'bg-[var(--accent-primary)] text-white shadow-lg shadow-[var(--accent-glow)] hover:bg-[var(--accent-hover)]'
+                                        }`}
+                                >
+                                    {searchResult.requestSent ? 'Sent' : 'Send Request'}
                                 </button>
                             </div>
                         )}
-                        {query && !loading && !searchResult && <p className="text-center text-gray-500 text-xs text-red-400">User not found</p>}
                     </div>
                 )}
-
             </div>
         </div>
     );

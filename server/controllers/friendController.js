@@ -153,10 +153,50 @@ const getFriendRequests = async (req, res) => {
     }
 };
 
+// @desc    Remove a friend
+// @route   POST /api/friends/remove
+// @access  Private
+const removeFriend = async (req, res) => {
+    const { friendId } = req.body;
+
+    try {
+        const user = await User.findById(req.user._id);
+        const friend = await User.findById(friendId);
+
+        if (!friend) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        if (!user.friends.includes(friendId)) {
+            return res.status(400).json({ message: 'Not friends' });
+        }
+
+        // Remove from both users' friend lists
+        user.friends = user.friends.filter(id => id.toString() !== friendId);
+        await user.save();
+
+        friend.friends = friend.friends.filter(id => id.toString() !== user._id.toString());
+        await friend.save();
+
+        // Optional: Remove associated friend request to allow re-adding logic if needed
+        await FriendRequest.deleteMany({
+            $or: [
+                { sender: user._id, receiver: friendId },
+                { sender: friendId, receiver: user._id }
+            ]
+        });
+
+        res.json({ message: 'Friend removed' });
+    } catch (error) {
+        res.status(500).json({ message: error.message });
+    }
+};
+
 module.exports = {
     sendFriendRequest,
     acceptFriendRequest,
     rejectFriendRequest,
     getFriends,
-    getFriendRequests
+    getFriendRequests,
+    removeFriend
 };

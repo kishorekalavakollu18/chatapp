@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { chatWithAI, getAIHistory } from '../../services/aiApi';
-import { FiSend, FiMenu, FiCpu } from 'react-icons/fi';
-import { motion } from 'framer-motion';
+import { FiSend, FiChevronLeft, FiCpu } from 'react-icons/fi';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const AIChatWindow = ({ onBack }) => {
     const [messages, setMessages] = useState([]);
@@ -14,9 +14,7 @@ const AIChatWindow = ({ onBack }) => {
             try {
                 const data = await getAIHistory();
                 setMessages(data);
-            } catch (error) {
-                console.error("Failed to load AI history", error);
-            }
+            } catch (error) { console.error(error); }
         };
         loadHistory();
     }, []);
@@ -33,7 +31,7 @@ const AIChatWindow = ({ onBack }) => {
         setInput('');
 
         // Optimistic UI
-        const tempMsg = { role: 'user', content: userMsg, createdAt: new Date() };
+        const tempMsg = { role: 'user', content: userMsg };
         setMessages(prev => [...prev, tempMsg]);
         setLoading(true);
 
@@ -41,55 +39,61 @@ const AIChatWindow = ({ onBack }) => {
             const response = await chatWithAI(userMsg);
             setMessages(prev => [...prev, response]);
         } catch (error) {
-            console.error("AI Error", error);
-            // Maybe add error message to chat
+            // Handle error
         } finally {
             setLoading(false);
         }
     };
 
     return (
-        <div className="flex flex-col h-full bg-dark-900 w-full relative">
-            {/* Header */}
-            <div className="p-4 border-b border-dark-700 flex items-center gap-3 bg-dark-800">
-                <button onClick={onBack} className="md:hidden text-gray-400">
-                    <FiMenu size={24} />
+        <div className="flex flex-col h-full w-full bg-dark-900/40 relative">
+            {/* Minimal Header */}
+            <div className="absolute top-0 left-0 right-0 z-10 p-4 bg-gradient-to-b from-dark-900 via-dark-900/90 to-transparent flex items-center gap-4">
+                <button
+                    onClick={onBack}
+                    className="md:hidden p-2 rounded-full bg-white/5 text-white hover:bg-white/10 transition backdrop-blur-md"
+                >
+                    <FiChevronLeft size={20} />
                 </button>
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-primary flex items-center justify-center text-white shadow-lg shadow-primary/20">
-                    <FiCpu size={20} />
-                </div>
-                <div>
-                    <h3 className="font-semibold text-white">AI Assistant</h3>
-                    <p className="text-xs text-gray-400">Powered by OpenAI</p>
+                <div className="flex items-center gap-3 bg-dark-800/60 p-2 pr-6 rounded-full border border-white/5 backdrop-blur-md">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white">
+                        <FiCpu size={14} />
+                    </div>
+                    <div>
+                        <h3 className="font-medium text-white text-sm">AI Assistant</h3>
+                    </div>
                 </div>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 pt-24 pb-4 space-y-4 custom-scrollbar">
                 {messages.map((msg, index) => {
                     const isMe = msg.role === 'user';
                     return (
-                        <div key={index} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            key={index}
+                            className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}
+                        >
                             <div
-                                className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${isMe
-                                        ? 'bg-primary text-white rounded-br-none'
-                                        : 'bg-dark-700 text-gray-200 rounded-bl-none border border-dark-600'
+                                className={`max-w-[85%] px-5 py-3 rounded-2xl text-sm leading-relaxed backdrop-blur-sm shadow-sm ${isMe
+                                    ? 'bg-indigo-600 text-white rounded-tr-none'
+                                    : 'bg-dark-700/60 text-gray-100 rounded-tl-none border border-white/5'
                                     }`}
                             >
-                                <p className="whitespace-pre-wrap">{msg.content}</p>
+                                <p className="whitespace-pre-wrap font-light">{msg.content}</p>
                             </div>
-                        </div>
+                        </motion.div>
                     );
                 })}
 
                 {loading && (
                     <div className="flex justify-start">
-                        <div className="bg-dark-700 px-4 py-3 rounded-2xl rounded-bl-none border border-dark-600">
-                            <div className="flex gap-1">
-                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                                <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                            </div>
+                        <div className="bg-dark-700/40 px-4 py-3 rounded-2xl rounded-tl-none border border-white/5 flex gap-1.5 items-center">
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                            <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
                         </div>
                     </div>
                 )}
@@ -97,19 +101,25 @@ const AIChatWindow = ({ onBack }) => {
             </div>
 
             {/* Input */}
-            <form onSubmit={handleSend} className="p-4 bg-dark-800 border-t border-dark-700 flex gap-2">
-                <input
-                    type="text"
-                    className="flex-1 bg-dark-900 text-white rounded-full px-4 py-2 focus:outline-none focus:ring-1 focus:ring-primary border border-dark-700"
-                    placeholder="Ask anything..."
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    disabled={loading}
-                />
-                <button type="submit" disabled={loading} className="bg-primary p-3 rounded-full text-white hover:bg-primary/90 transition shadow-lg shadow-primary/20 disabled:opacity-50">
-                    <FiSend />
-                </button>
-            </form>
+            <div className="p-4 bg-transparent">
+                <form onSubmit={handleSend} className="bg-dark-800/80 border border-white/10 rounded-full px-2 py-2 flex items-center gap-2 shadow-lg backdrop-blur-xl">
+                    <input
+                        type="text"
+                        className="flex-1 bg-transparent text-white px-4 py-2 focus:outline-none text-sm placeholder-gray-500"
+                        placeholder="Ask anything..."
+                        value={input}
+                        onChange={(e) => setInput(e.target.value)}
+                        disabled={loading}
+                    />
+                    <button
+                        type="submit"
+                        disabled={loading}
+                        className="w-10 h-10 bg-indigo-500 rounded-full text-white flex items-center justify-center hover:bg-indigo-600 transition shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                    >
+                        <FiSend className="ml-0.5" />
+                    </button>
+                </form>
+            </div>
         </div>
     );
 };

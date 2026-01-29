@@ -32,3 +32,8 @@ export const getFriendRequests = async () => {
     const { data } = await api.get('/friends/requests');
     return data;
 };
+
+export const removeFriend = async (friendId) => {
+    const { data } = await api.post('/friends/remove', { friendId });
+    return data;
+};
